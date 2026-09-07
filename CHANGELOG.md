@@ -3,6 +3,12 @@
 > [!IMPORTANT]
 > **1.0.69 — package rename (permanent).** Canonical npm name is now [`pi-claude-code-ui`](https://www.npmjs.com/package/pi-claude-code-ui). `pi-claude-style-tools` is legacy and will not receive further releases. Install with `pi install npm:pi-claude-code-ui` or `npm i pi-claude-code-ui`.
 
+## 1.0.83 — 2026-09-07
+
+### Fixed
+
+- **Support Pi 0.85+ MouseRegion-wrapped thinking blocks** — unwrap `MouseRegion` containers in `replaceHiddenThinkingPlaceholders` and the assistant message Markdown post-processor. Resolves an issue in newer Pi versions where thinking blocks were rendered in raw italics and collapsed thoughts remained stuck on "Thinking…" instead of transitioning to "Thought for Xs". Preserves native Pi 0.85 mouse click-to-expand and click-to-collapse functionality.
+
 ## 1.0.80 — 2026-08-24
 
 ### Fixed

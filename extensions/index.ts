@@ -2043,9 +2043,10 @@ function replaceHiddenThinkingPlaceholders(container: { children?: any[] }, mess
 	let firstReplaced = false;
 	for (let i = 0; i < container.children.length; i++) {
 		const child = container.children[i];
-		if (child instanceof HiddenThinkingSummary || (child as any)?.constructor?.name === "HiddenThinkingSummary") {
+		const inner = (child as any)?.child ?? child;
+		if (inner instanceof HiddenThinkingSummary || (inner as any)?.constructor?.name === "HiddenThinkingSummary") {
 			if (!firstReplaced) {
-				child.setSummary(summary);
+				inner.setSummary(summary);
 				firstReplaced = true;
 			} else {
 				container.children.splice(i, 1);
@@ -2053,9 +2054,14 @@ function replaceHiddenThinkingPlaceholders(container: { children?: any[] }, mess
 			}
 			continue;
 		}
-		if (isHiddenThinkingPlaceholderText(child)) {
+		if (isHiddenThinkingPlaceholderText(inner)) {
 			if (!firstReplaced) {
-				container.children[i] = new HiddenThinkingSummary(summary);
+				const summaryComp = new HiddenThinkingSummary(summary);
+				if ((child as any)?.child !== undefined) {
+					(child as any).child = summaryComp;
+				} else {
+					container.children[i] = summaryComp;
+				}
 				firstReplaced = true;
 			} else {
 				container.children.splice(i, 1);
@@ -2459,15 +2465,26 @@ function patchAssistantMessages(): void {
 		const mdTheme = (this as any).markdownTheme;
 		for (let i = container.children.length - 1; i >= 0; i--) {
 			const child = container.children[i];
-			if (isMarkdownComponent(child)) {
-				const text = (child as any).text;
+			const inner = (child as any)?.child ?? child;
+			if (isMarkdownComponent(inner)) {
+				const text = (inner as any).text;
 				if (!text) continue;
-				const isThinking = !!(child as any).defaultTextStyle?.italic;
+				const isThinking = !!(inner as any).defaultTextStyle?.italic;
 				if (isThinking) {
-					const style = (child as any).defaultTextStyle;
-					container.children[i] = new ThinkingParagraph(text, mdTheme, style);
+					const style = (inner as any).defaultTextStyle;
+					const replacement = new ThinkingParagraph(text, mdTheme, style);
+					if ((child as any)?.child !== undefined) {
+						(child as any).child = replacement;
+					} else {
+						container.children[i] = replacement;
+					}
 				} else {
-					container.children[i] = new DottedParagraph(text, mdTheme);
+					const replacement = new DottedParagraph(text, mdTheme);
+					if ((child as any)?.child !== undefined) {
+						(child as any).child = replacement;
+					} else {
+						container.children[i] = replacement;
+					}
 				}
 			}
 		}

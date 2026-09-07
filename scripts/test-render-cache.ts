@@ -356,4 +356,67 @@ const neq = (a: string[], b: string[], label: string) => {
 	console.log("OK  finished thoughts: fast/untimed messages resolve to Thought for Xs");
 }
 
+// ---------------------------------------------------------------------------
+// 12. Pi 0.85+ MouseRegion wrapping: thinking wrapped in MouseRegion resolves correctly.
+// ---------------------------------------------------------------------------
+{
+	const clean = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\][^\x07]*\x07/g, "").trim();
+	class MockMouseRegion {
+		child: any;
+		onMouse: (event: any) => any;
+		constructor(child: any, onMouse: (event: any) => any) {
+			this.child = child;
+			this.onMouse = onMouse;
+		}
+		render(width: number) {
+			return this.child.render(width);
+		}
+		handleMouse(event: any) {
+			return this.onMouse(event);
+		}
+		invalidate() {
+			this.child.invalidate?.();
+		}
+	}
+
+	const thinkingMsg = {
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: "Detailed reasoning wrapped in MouseRegion." },
+			{ type: "text", text: "Done with reasoning." }
+		],
+		stopReason: "stop",
+		_piClaudeStyleThinkingDurationMs: 3500
+	};
+
+	// Simulate Pi 0.85+ where AssistantMessageComponent.updateContent wraps thinking in MouseRegion:
+	const comp = new AssistantMessageComponent(undefined as any, true);
+	(comp as any).updateContent(thinkingMsg);
+	const children = (comp as any).contentContainer.children;
+	const thinkingIdx = children.findIndex((c: any) => (c as any)?.constructor?.name === "HiddenThinkingSummary" || (c as any)?.constructor?.name === "Text");
+	if (thinkingIdx !== -1) {
+		const placeholderText = children[thinkingIdx];
+		children[thinkingIdx] = new MockMouseRegion(placeholderText, () => {});
+		// Re-run updateContent on the message with the MouseRegion placeholder in place
+		(comp as any).updateContent(thinkingMsg);
+	}
+
+	let lines = comp.render(W).map(clean).filter(Boolean);
+	if (!lines.some((l) => l.includes("Thought for 4s"))) {
+		throw new Error(`MouseRegion-wrapped thinking did not collapse to Thought for 4s; got: ${JSON.stringify(lines)}`);
+	}
+
+	// Test expanded:
+	comp.setHideThinkingBlock(false);
+	lines = comp.render(W).map(clean).filter(Boolean);
+	if (!lines.some((l) => l.includes("Detailed reasoning wrapped in MouseRegion."))) {
+		throw new Error(`MouseRegion-wrapped thinking did not expand; got: ${JSON.stringify(lines)}`);
+	}
+	const rawLines = comp.render(W).filter(Boolean);
+	if (!rawLines.some((l) => l.includes("∴"))) {
+		throw new Error(`expanded thinking missing ∴ glyph; got: ${JSON.stringify(rawLines)}`);
+	}
+	console.log("OK  Pi 0.85+ MouseRegion wrapping: collapsed summary and expanded ∴ render correctly");
+}
+
 console.log("\nAll correctness checks passed.");
