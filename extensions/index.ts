@@ -603,14 +603,15 @@ function getToolGroupOverallStatus(tools: any[]): ToolStatus {
 }
 
 // Claude Code: solid filled circle that is either fully present or fully gone
-// while pending — never a hollow outlined ○. Classic ● + bold is the sweet
-// spot for ordinary tools. Agent-family tools use a breathing size cycle.
-const STATUS_DOT_FILLED = "●";
+// while pending — never a hollow outlined ○. U+23FA (claude code on macOS)
+// optically centers on the text line; U+25CF ● renders baseline-sunk in most
+// terminal fonts. Agent-family tools use a breathing size cycle.
+const STATUS_DOT_FILLED = "⏺";
 const STATUS_DOT_BOLD = "\x1b[1m";
 // Single-cell glyphs only (⬤ is often double-width and walks the baseline).
 // Optical sizes share the same cell so the center stays put while breathing:
-// big ● → medium • → small · → invisible → small · → medium •
-const AGENT_BREATHE_GLYPHS = ["●", "•", "·", " ", "·", "•"] as const;
+// big ⏺ → medium • → small · → invisible → small · → medium •
+const AGENT_BREATHE_GLYPHS = ["⏺", "•", "·", " ", "·", "•"] as const;
 const AGENT_BREATHE_LEN = AGENT_BREATHE_GLYPHS.length;
 
 function paintStatusDot(colorAnsi: string): string {
@@ -631,14 +632,14 @@ function paintAgentBreatheDot(colorAnsi: string = TOOL_STATUS_SUCCESS): string {
 	const glyph = agentBreatheGlyphRaw();
 	if (glyph === " ") return " ";
 	// Bold only on the largest frame so weight changes without shifting the cell.
-	const bold = glyph === "●" ? STATUS_DOT_BOLD : "";
+	const bold = glyph === "⏺" ? STATUS_DOT_BOLD : "";
 	return `${colorAnsi}${bold}${glyph}${TRANSPARENT_RESET}`;
 }
 
 function agentBreatheDot(theme: Theme): string {
 	const glyph = agentBreatheGlyphRaw();
 	if (glyph === " ") return " ";
-	const bold = glyph === "●" ? STATUS_DOT_BOLD : "";
+	const bold = glyph === "⏺" ? STATUS_DOT_BOLD : "";
 	return theme.fg("success", `${bold}${glyph}`);
 }
 
@@ -703,7 +704,7 @@ function stripLeadingToolStatus(line: string): string {
 	// Include Agent breathe glyphs (·) and the blank off-phase (space) so the title
 	// never keeps a leftover marker that shifts when size changes.
 	return line.replace(
-		/^((?:\x1b\[[0-9;]*m|[ \t]|[├└│─])*)(?:\x1b\[[0-9;]*m)*(?:[●○✗■⬤•·]| )(?:\x1b\[[0-9;]*m)*\s+/,
+		/^((?:\x1b\[[0-9;]*m|[ \t]|[├└│─])*)(?:\x1b\[[0-9;]*m)*(?:[●○✗■⬤•·⏺]| )(?:\x1b\[[0-9;]*m)*\s+/,
 		"$1",
 	);
 }
@@ -1348,7 +1349,8 @@ function configuredKeyHint(binding: Parameters<typeof keyText>[0], fallbackKey: 
 }
 
 function expandHint(_theme: Theme, action: "expand" | "collapse" | "toggle" = "toggle"): string {
-	return ` • ${configuredKeyHint("app.tools.expand", "ctrl+o", `to ${action}`)}`;
+	if (readSettings().showTruncationHints === false) return "";
+	return ` (${configuredKeyHint("app.tools.expand", "ctrl+o", action === "toggle" ? "to expand" : `to ${action}`)})`;
 }
 
 function deepExpandHint(): string {
@@ -1356,7 +1358,7 @@ function deepExpandHint(): string {
 }
 
 function toolOutputDetailHint(theme: Theme, expanded: boolean, hasMore = false): string {
-	if (!expanded) return expandHint(theme, "toggle");
+	if (!expanded) return hasMore ? expandHint(theme, "toggle") : "";
 	const parts = [expandHint(theme, "collapse")];
 	if (hasMore || extraToolOutputExpanded) parts.push(deepExpandHint());
 	return parts.join("");
@@ -2003,11 +2005,11 @@ class DottedParagraph {
 			this.cachedLines = [""];
 			return this.cachedLines;
 		}
-		// " ● " = 1 margin + dot + space = 3 visible chars
+		// " ⏺ " = 1 margin + dot + space = 3 visible chars
 		const PREFIX_W = 3;
 		if (safeWidth <= PREFIX_W) {
 			this.cachedWidth = width;
-			this.cachedLines = [clampLineWidth(" ● ", safeWidth)];
+			this.cachedLines = [clampLineWidth(" ⏺ ", safeWidth)];
 			return this.cachedLines;
 		}
 		const contentWidth = safeWidth - PREFIX_W;
@@ -2024,7 +2026,7 @@ class DottedParagraph {
 			if (isCodeBoxChromeLine(line)) return `   ${line}`;
 			if (!dotPlaced) {
 				dotPlaced = true;
-				return ` ● ${line}`;
+				return ` ⏺ ${line}`;
 			}
 			return `   ${line}`;
 		}).map((line) => {
@@ -2693,9 +2695,7 @@ function isBlinkOn(): boolean {
 function toolHeader(tool: string, summary: string, theme: Theme, prefix = "", trailing = ""): string {
 	applyThemePaletteIfNeeded(theme);
 	const label = theme.fg("toolTitle", theme.bold(tool));
-	const body = summary
-		? `${label} ${WRAP_MARK}${theme.fg("accent", summary)}`
-		: label;
+	const body = summary ? `${label}(${CLIP_MARK}${summary})` : label;
 	return trailing ? `${prefix}${body}${trailing}` : `${prefix}${body}`;
 }
 
@@ -3037,16 +3037,15 @@ function toolStatusDot(ctx: any, theme: Theme): string {
 // ---------------------------------------------------------------------------
 
 function branchIndent(text: string, continued = false, theme?: Theme): string {
-	const rule = currentToolBranchAnsi(theme);
-	// Align under bare `├ `/`└ ` (│ + one space, or two spaces when closed).
-	const prefix = continued ? `${rule}│${TRANSPARENT_RESET} ` : "  ";
-	return `${prefix}${WRAP_MARK}${text}`;
+	if (!continued) return `    ${CLIP_MARK}${text}`;
+	// Align under bare `├ `/`└ ` (│ + one space) so wraps line up with the lead.
+	return `  ${currentToolBranchAnsi(theme)}│${TRANSPARENT_RESET} ${CLIP_MARK}${text}`;
 }
 
 function branchLead(text: string, continued = false, theme?: Theme): string {
-	const rule = currentToolBranchAnsi(theme);
 	// Bare tee/corner only — no horizontal ─ arm.
-	return `${rule}${continued ? "├" : "└"}${TRANSPARENT_RESET} ${WRAP_MARK}${text}`;
+	const branch = continued ? "├" : "└";
+	return `  ${currentToolBranchAnsi(theme)}${branch}${TRANSPARENT_RESET} ${CLIP_MARK}${text}`;
 }
 
 function withBranch(content: string, theme: Theme, _isError = false, continued = false): string {
@@ -3527,7 +3526,7 @@ function buildPreviewText(
 	}
 	const remaining = Math.max(0, totalLineCount - limit);
 	if (remaining > 0) {
-		text += `${text ? "\n" : ""}${theme.fg("muted", `... (${remaining} more lines${toolOutputDetailHint(theme, expanded, true)})`)}`;
+		text += `${text ? "\n" : ""}${theme.fg("muted", `… +${remaining} lines${expandHint(theme, "expand")}`)}`;
 	}
 	if (expanded && totalLineCount > maxLines) {
 		text += `\n${theme.fg("warning", `(display capped at ${maxLines} lines${deepExpandHint()})`)}`;
@@ -5647,12 +5646,12 @@ function runningPreviewBlock(
 	const previewTotal = options.tail && !expanded ? previewSource.length : totalLineCount;
 	let preview = buildPreviewText(previewSource, expanded, theme, limit, previewTotal, styleLine);
 	if (options.tail && !expanded && totalLineCount > previewSource.length) {
-		preview = `${theme.fg("muted", `... (${totalLineCount - previewSource.length} earlier lines${toolOutputDetailHint(theme, expanded, true)})`)}\n${preview}`;
+		preview = `${theme.fg("muted", `… +${totalLineCount - previewSource.length} lines${expandHint(theme, "expand")}`)}\n${preview}`;
 	}
 	return withBranch(preview, theme);
 }
 
-function buildPersistentBashPreview(lines: string[], theme: Theme): string {
+function buildPersistentBashPreview(lines: string[], totalLineCount: number, theme: Theme): string {
 	const limit = liveToolPreviewLimit();
 	if (!liveToolPreviewEnabled() || limit <= 0 || lines.length === 0) return "";
 	const start = Math.max(0, lines.length - limit);
@@ -5661,9 +5660,9 @@ function buildPersistentBashPreview(lines: string[], theme: Theme): string {
 		const styled = theme.fg("dim", lines[i]);
 		preview += i === start ? styled : `\n${styled}`;
 	}
-	const earlier = start;
+	const earlier = Math.max(0, totalLineCount - (lines.length - start));
 	if (earlier > 0) {
-		preview = `${theme.fg("muted", `... (${earlier} earlier lines)`)}\n${preview}`;
+		preview += `\n${theme.fg("muted", `… +${earlier} lines${expandHint(theme, "expand")}`)}`;
 	}
 	return preview;
 }
@@ -6118,13 +6117,26 @@ function renderApplyPatchResult(result: any, isPartial: boolean, theme: Theme, c
 	return makeText(ctx.lastComponent, withBranch(`${theme.fg("success", "Applied")} ${meta.changeCount} files ${summary}${meta.totalLines ? ` ${theme.fg("muted", `(${meta.totalLines} diff lines)`)}` : ""}`, theme));
 }
 
+function mcpArgsSuffix(args: any, skip: string[], theme: Theme): string {
+	if (!args || typeof args !== "object") return "";
+	// Namespace-proxy calls nest the real arguments under a lone `args` key.
+	const entries = Object.entries(args).filter(([key]) => !skip.includes(key));
+	const flat = entries.length === 1 && entries[0][0] === "args" && entries[0][1] && typeof entries[0][1] === "object"
+		? Object.entries(entries[0][1])
+		: entries;
+	const text = flat
+		.map(([key, value]) => `${key}: ${summarizeText(typeof value === "string" ? value.replace(/\s+/g, " ").trim() : JSON.stringify(value) ?? "", 40)}`)
+		.join(", ");
+	return text ? theme.fg("muted", `, ${text.length > 120 ? `${text.slice(0, 117)}…` : text}`) : "";
+}
+
 function summarizeMcpToolCall(args: any, theme: Theme): string {
 	const tool = getStringArg(args, "tool");
-	if (tool) return args?.server ? `${args.server}:${tool}` : tool;
+	if (tool) return `${args?.server ? `${args.server}:${tool}` : tool}${mcpArgsSuffix(args, ["tool", "server"], theme)}`;
 	const connect = getStringArg(args, "connect");
-	if (connect) return `connect ${connect}`;
-	const search = getStringArg(args, "search", "describe", "server", "action");
-	if (search) return summarizeText(search, 72);
+	if (connect) return `connect ${connect}${mcpArgsSuffix(args, ["connect"], theme)}`;
+	const searchKey = ["search", "describe", "server", "action"].find((key) => typeof args?.[key] === "string" && args[key].trim());
+	if (searchKey) return `${summarizeText(args[searchKey].trim(), 72)}${mcpArgsSuffix(args, [searchKey], theme)}`;
 	return theme.fg("muted", "status");
 }
 
@@ -6153,16 +6165,15 @@ function renderMcpToolResult(result: any, expanded: boolean, isPartial: boolean,
 
 	const statusText = ctx.isError ? theme.fg("error", lines[0]) : theme.fg("muted", `${lines.length} line${lines.length === 1 ? "" : "s"} returned`);
 	if (mode === "summary") return makeText(ctx.lastComponent, withBranch(statusText, theme));
-	if (!expanded) return makeText(ctx.lastComponent, withBranch(`${statusText}${toolOutputDetailHint(theme, expanded)}`, theme));
 	const preview = buildPreviewText(
 		lines,
-		true,
+		expanded,
 		theme,
 		previewLimit(),
 		lines.length,
 		(line) => theme.fg(ctx.isError ? "error" : "toolOutput", line || " "),
 	);
-	return makeText(ctx.lastComponent, withBranch(`${statusText}\n${preview}`, theme));
+	return makeText(ctx.lastComponent, withBranch(ctx.isError ? `${statusText}\n${preview}` : preview, theme));
 }
 
 function summarizeOpenAiToolCall(name: string, args: any, theme: Theme, sp: (path: string) => string): string {
@@ -6411,7 +6422,11 @@ function renderOpenAiToolResult(name: string, result: any, expanded: boolean, is
 		? theme.fg("error", lines[0])
 		: theme.fg("muted", `${lines.length} line${lines.length === 1 ? "" : "s"} returned`);
 	if (!expanded) {
-		return makeText(ctx.lastComponent, withBranch(`${statusText}${toolOutputDetailHint(theme, expanded)}`, theme));
+		if (!ctx.isError && lines.length === 1) {
+			return makeText(ctx.lastComponent, withBranch(formatOpenAiSuccessLine(name, lines[0], theme), theme));
+		}
+		const collapsedPreview = buildPreviewText(lines, false, theme, previewLimit(), lines.length, (line) => theme.fg(ctx.isError ? "error" : "dim", line || " "));
+		return makeText(ctx.lastComponent, withBranch(ctx.isError ? `${statusText}\n${collapsedPreview}` : collapsedPreview, theme));
 	}
 
 	if (!ctx.isError && lines.length === 1) {
@@ -6936,7 +6951,7 @@ export default function (pi: ExtensionAPI) {
 			const command = typeof args.command === "string" ? args.command : "";
 			const presentation = buildBashCommandPresentation(command);
 			const summary = stableCallSummary(ctx, "_bashHeadline", () => presentation.headline);
-			const rtkBadge = rewrite ? theme.fg("muted", " (RTK)") : "";
+			const rtkBadge = rewrite ? theme.fg("muted", ", RTK") : "";
 			const status = ctx?.state?._toolStatus;
 			const showCommand = ctx.argsComplete === true && (status === "pending" || status === "error" || ctx.expanded === true);
 			const commandBlock = showCommand ? renderBashCommandBlock(command, ctx.expanded === true, theme) : "";
@@ -6947,7 +6962,7 @@ export default function (pi: ExtensionAPI) {
 				theme,
 				toolStatusDot(ctx, theme),
 				bashHeaderTrailing(ctx, theme),
-			).replace(WRAP_MARK, CLIP_MARK);
+			).replace(CLIP_MARK, WRAP_MARK);
 			return makeText(ctx.lastComponent, commandBlock ? `${header}\n${commandBlock}` : header);
 		},
 		renderResult(result, { expanded, isPartial }, theme, ctx) {
@@ -6979,13 +6994,18 @@ export default function (pi: ExtensionAPI) {
 			}
 			const exitMatch = output.match(/exit code: (\d+)/);
 			const exitCode = exitMatch ? Number.parseInt(exitMatch[1], 10) : null;
+			if (!expanded) {
+				const parts: string[] = [];
+				if (exitCode !== null && exitCode !== 0) parts.push(theme.fg("error", `Exit ${exitCode}`));
+				if (details?.truncation?.truncated) parts.push(theme.fg("warning", "[truncated]"));
+				const preview = buildPersistentBashPreview(nonEmpty.lines, nonEmpty.total, theme);
+				if (preview) parts.push(preview);
+				else if (nonEmpty.total === 0) parts.push(theme.fg("muted", "(no output)"));
+				return makeText(ctx.lastComponent, withBranch(parts.join("\n"), theme));
+			}
 			let text = exitCode === null || exitCode === 0 ? theme.fg("success", "Done") : theme.fg("error", `Exit ${exitCode}`);
 			text += theme.fg("muted", ` (${nonEmpty.total} lines)`);
 			if (details?.truncation?.truncated) text += theme.fg("warning", " [truncated]");
-			const persistentPreview = shouldPreserveBashPreview(ctx) ? buildPersistentBashPreview(nonEmpty.lines, theme) : "";
-			if (!expanded && persistentPreview) return makeText(ctx.lastComponent, withBranch(`${text}${toolOutputDetailHint(theme, expanded)}\n${persistentPreview}`, theme));
-			if (!expanded && nonEmpty.total > 0) return makeText(ctx.lastComponent, withBranch(`${text}${toolOutputDetailHint(theme, expanded)}`, theme));
-			if (!expanded) return makeText(ctx.lastComponent, withBranch(text, theme));
 			const collapsed = bashCollapsedLimit();
 			if (rewrite) text += `\n${formatRtkRewriteDetails(rewrite, theme)}`;
 			text += `\n${buildPreviewText(nonEmpty.lines, false, theme, collapsed, nonEmpty.total, (line) => theme.fg("dim", line))}`;
